@@ -40,9 +40,8 @@ venv.bak/
 
 # Project specific
 chroma_db/
-docs/*
-!docs/.gitkeep
-*.pdf
+
+
 *.log
 .streamlit/secrets.toml
 
