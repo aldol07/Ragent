@@ -1,4 +1,6 @@
 from langchain_community.llms import HuggingFaceHub
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
 from config import HUGGINGFACEHUB_API_TOKEN, CALCULATOR_KEYWORDS, DEFINE_KEYWORDS
 import re
 import os
@@ -20,6 +22,35 @@ class Agent:
                 "return_full_text": False
             }
         )
+        
+        # Create prompt templates
+        self.definition_template = PromptTemplate(
+            input_variables=["query"],
+            template="Provide a clear and concise definition for: {query}"
+        )
+        
+        self.rag_template = PromptTemplate(
+            input_variables=["context", "query"],
+            template="""You are a helpful assistant. Answer the question based on the provided context. 
+            If the context doesn't contain enough information, say so.
+
+            Context:
+            {context}
+
+            Question: {query}
+
+            Answer:"""
+        )
+        
+        self.general_template = PromptTemplate(
+            input_variables=["query"],
+            template="Answer the following question as a helpful assistant: {query}"
+        )
+        
+        # Create chains
+        self.definition_chain = LLMChain(llm=self.model, prompt=self.definition_template)
+        self.rag_chain = LLMChain(llm=self.model, prompt=self.rag_template)
+        self.general_chain = LLMChain(llm=self.model, prompt=self.general_template)
         
         self.conversation_history = []
     
@@ -113,9 +144,8 @@ class Agent:
                     
             elif self._is_definition_query(query):
                 decision = "Definition"
-                # Use Zephyr for definitions
-                prompt = f"Provide a clear and concise definition for: {query}"
-                response = self._clean_response(self.model.invoke(prompt))
+                # Use definition chain
+                response = self._clean_response(self.definition_chain.invoke({"query": query})["text"])
                 
             else:
                 # RAG pipeline with similarity threshold
@@ -125,14 +155,14 @@ class Agent:
                     use_context = any(score >= similarity_threshold for score in similarity_scores)
                     
                 if use_context:
-                    # Create prompt without showing it in output
-                    system_prompt = "You are a helpful assistant. Answer the question based on the provided context. If the context doesn't contain enough information, say so."
-                    prompt = f"{system_prompt}\n\nContext:\n{context}\n\nQuestion: {query}\n\nAnswer:"
-                    response = self._clean_response(self.model.invoke(prompt))
+                    # Use RAG chain
+                    response = self._clean_response(self.rag_chain.invoke({
+                        "context": context,
+                        "query": query
+                    })["text"])
                 else:
-                    # Fallback to general LLM answering
-                    prompt = f"Answer the following question as a helpful assistant: {query}"
-                    response = self._clean_response(self.model.invoke(prompt))
+                    # Fallback to general chain
+                    response = self._clean_response(self.general_chain.invoke({"query": query})["text"])
                     decision = "LLM"
                 
         except Exception as e:
