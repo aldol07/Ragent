@@ -21,11 +21,16 @@ class VectorStore:
         if not documents:
             raise ValueError("No documents provided for vector store creation")
         
-        # Create a new ChromaDB instance
+        # Create a new ChromaDB instance with HNSW index
         self.vector_store = Chroma.from_documents(
             documents=documents,
             embedding=self.embeddings,
-            persist_directory=self.persist_directory
+            persist_directory=self.persist_directory,
+            collection_metadata={
+                "hnsw:space": "cosine",  # Use cosine similarity
+                "hnsw:construction_ef": 100,  # Higher values = better accuracy, slower build
+                "hnsw:search_ef": 50,  # Higher values = better accuracy, slower search
+            }
         )
         return self.vector_store
 

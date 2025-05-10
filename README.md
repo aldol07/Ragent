@@ -104,6 +104,21 @@ A sophisticated Question-Answering system that combines Retrieval-Augmented Gene
 
 5. Start asking questions in the chat interface
 
+### Deployment on Streamlit Cloud
+
+1. Fork this repository to your GitHub account
+
+2. Go to [share.streamlit.io](https://share.streamlit.io)
+
+3. Create a new app and connect it to your forked repository
+
+4. Set the following secrets in Streamlit Cloud:
+   - `HUGGINGFACEHUB_API_TOKEN`: Your HuggingFace API token
+
+5. Deploy the app
+
+Note: The application uses ChromaDB with HNSW indexing for efficient vector storage and retrieval. This implementation is optimized for deployment on Streamlit Cloud and doesn't require additional system dependencies.
+
 ## Usage
 
 1. **Document Processing**
