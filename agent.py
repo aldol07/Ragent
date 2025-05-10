@@ -26,13 +26,19 @@ class Agent:
         # Create prompt templates
         self.definition_template = PromptTemplate(
             input_variables=["query"],
-            template="Provide a clear and concise definition for: {query}"
+            template="""You are a helpful assistant. Provide a clear, concise, and accurate definition for the following term or concept. 
+            Include relevant examples if helpful, but keep the response focused and informative.
+
+            Term/Concept: {query}
+
+            Definition:"""
         )
         
         self.rag_template = PromptTemplate(
             input_variables=["context", "query"],
             template="""You are a helpful assistant. Answer the question based on the provided context. 
-            If the context doesn't contain enough information, say so.
+            If the context doesn't contain enough information, say so and provide a general answer based on your knowledge.
+            Make your response clear, concise, and well-structured.
 
             Context:
             {context}
@@ -44,7 +50,12 @@ class Agent:
         
         self.general_template = PromptTemplate(
             input_variables=["query"],
-            template="Answer the following question as a helpful assistant: {query}"
+            template="""You are a helpful assistant. Provide a clear, informative, and well-structured answer to the following question.
+            If you're not completely sure about something, acknowledge that and provide the best information you have.
+
+            Question: {query}
+
+            Answer:"""
         )
         
         # Create chains
@@ -56,35 +67,34 @@ class Agent:
     
     def _is_calculator_query(self, query):
         """Check if the query requires calculator."""
-        return any(keyword in query.lower() for keyword in CALCULATOR_KEYWORDS)
+        # Check for mathematical operators
+        math_operators = ['+', '-', '*', '/', '÷', '×', '^', '**']
+        return any(op in query for op in math_operators) or any(keyword in query.lower() for keyword in CALCULATOR_KEYWORDS)
 
     def _is_definition_query(self, query):
         """Check if the query requires definition lookup."""
         return any(keyword in query.lower() for keyword in DEFINE_KEYWORDS)
 
     def _extract_math_expression(self, query):
-        """Extract mathematical expression from query, supporting negative numbers and parentheses."""
-        # Try to extract everything after a calculator keyword
-        for keyword in CALCULATOR_KEYWORDS:
-            if keyword in query.lower():
-                # Extract everything after the keyword
-                idx = query.lower().find(keyword) + len(keyword)
-                expr = query[idx:].strip()
-                if expr:
-                    return expr
-        # Fallback: regex for numbers, operators, parentheses, and spaces
-        pattern = r'([\d\s\+\-\*\/\(\)]+)'
+        """Extract mathematical expression from query."""
+        # Remove any text before or after the expression
+        pattern = r'([\d\s\+\-\*\/\(\)\^]+)'
         match = re.search(pattern, query)
         if match:
-            return match.group(1).strip()
+            expr = match.group(1).strip()
+            # Replace common math symbols
+            expr = expr.replace('×', '*').replace('÷', '/').replace('^', '**')
+            return expr
         return None
 
     def _calculate(self, expression):
         """Safely evaluate mathematical expression."""
         try:
-            return eval(expression)
-        except:
-            return "Invalid mathematical expression"
+            # Follow order of operations: parentheses, exponents, multiplication/division, addition/subtraction
+            result = eval(expression)
+            return f"The result of {expression} is {result}"
+        except Exception as e:
+            return f"Error calculating expression: {str(e)}"
 
     def _clean_response(self, response):
         """Clean up the response by removing prompt templates and system messages."""
@@ -102,7 +112,9 @@ class Agent:
                 "Here's the answer:",
                 "Here's what I found:",
                 "Based on the context:",
-                "According to the context:"
+                "According to the context:",
+                "Definition:",
+                "Term/Concept:"
             ]
             
             for template in templates_to_remove:
@@ -137,8 +149,7 @@ class Agent:
                 decision = "Calculator"
                 expression = self._extract_math_expression(query)
                 if expression:
-                    result = self._calculate(expression)
-                    response = f"The result of {expression} is {result}"
+                    response = self._calculate(expression)
                 else:
                     response = "I couldn't identify a valid mathematical expression in your query."
                     

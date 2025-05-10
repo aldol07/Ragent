@@ -1,6 +1,6 @@
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from config import HUGGINGFACEHUB_API_TOKEN, EMBEDDING_MODEL_NAME, TOP_K_RESULTS
+from config import HUGGINGFACEHUB_API_TOKEN, EMBEDDING_MODEL_NAME
 import os
 
 class VectorStore:
@@ -15,24 +15,29 @@ class VectorStore:
         )
         self.vector_store = None
         self.persist_directory = "chroma_db"
+        
+        # Try to load existing vector store on initialization
+        self.load_vector_store()
 
     def create_vector_store(self, documents):
         """Create a new vector store from documents."""
         if not documents:
-            raise ValueError("No documents provided for vector store creation")
-        
+            return False
+            
         # Create a new ChromaDB instance with HNSW index
         self.vector_store = Chroma.from_documents(
             documents=documents,
             embedding=self.embeddings,
             persist_directory=self.persist_directory,
             collection_metadata={
-                "hnsw:space": "cosine",  # Use cosine similarity
-                "hnsw:construction_ef": 100,  # Higher values = better accuracy, slower build
-                "hnsw:search_ef": 50,  # Higher values = better accuracy, slower search
+                "hnsw:space": "cosine",
+                "hnsw:construction_ef": 100,
+                "hnsw:search_ef": 50
             }
         )
-        return self.vector_store
+        # Save the vector store immediately after creation
+        self.save_vector_store()
+        return True
 
     def save_vector_store(self):
         """Save the vector store to disk."""
@@ -43,11 +48,15 @@ class VectorStore:
     def load_vector_store(self):
         """Load the vector store from disk."""
         if os.path.exists(self.persist_directory):
-            self.vector_store = Chroma(
-                persist_directory=self.persist_directory,
-                embedding_function=self.embeddings
-            )
-            return True
+            try:
+                self.vector_store = Chroma(
+                    persist_directory=self.persist_directory,
+                    embedding_function=self.embeddings
+                )
+                return True
+            except Exception as e:
+                print(f"Error loading vector store: {str(e)}")
+                return False
         return False
 
     def similarity_search(self, query):
@@ -55,15 +64,15 @@ class VectorStore:
         if not self.vector_store:
             return []
             
-        # Perform similarity search with metadata
+        # Get more results initially to ensure we have enough unique chunks
         results = self.vector_store.similarity_search_with_score(
             query,
-            k=TOP_K_RESULTS * 2  # Get more results initially to filter duplicates
+            k=6  # Get more results to ensure we have enough unique chunks
         )
         
         # Format results to include normalized similarity scores
         formatted_results = []
-        seen_contents = set()  # Track unique contents
+        seen_contents = set()
         
         if results:
             # Get the highest score for normalization
@@ -95,9 +104,18 @@ class VectorStore:
                     'similarity_score': normalized_score
                 })
                 
-                # Stop if we have enough unique results
-                if len(formatted_results) >= TOP_K_RESULTS:
+                # Stop if we have 3 unique results
+                if len(formatted_results) >= 3:
                     break
+            
+            # If we don't have 3 unique results, pad with the last result
+            while len(formatted_results) < 3 and len(results) > 0:
+                last_doc, last_score = results[-1]
+                formatted_results.append({
+                    'content': last_doc.page_content,
+                    'metadata': last_doc.metadata,
+                    'similarity_score': 0.0  # Set a low score for padded results
+                })
             
         return formatted_results
 
@@ -106,23 +124,12 @@ class VectorStore:
         if not self.vector_store:
             return None
             
-        collection = self.vector_store._collection
-        stats = {
-            'count': collection.count(),
-            'name': collection.name
-        }
-        
-        # Handle dimension attribute differently based on ChromaDB version
         try:
-            stats['dimensions'] = collection.dimension
-        except AttributeError:
-            # For newer versions of ChromaDB, try this alternate approach
-            try:
-                if hasattr(collection, 'metadata') and collection.metadata():
-                    metadata = collection.metadata()
-                    if 'dimension' in metadata:
-                        stats['dimensions'] = metadata['dimension']
-            except:
-                stats['dimensions'] = "unknown"
-        
-        return stats
+            collection = self.vector_store._collection
+            return {
+                'count': collection.count(),
+                'metadata': collection.metadata
+            }
+        except Exception as e:
+            print(f"Error getting collection stats: {str(e)}")
+            return None
