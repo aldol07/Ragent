@@ -1,7 +1,6 @@
 from langchain_community.llms import HuggingFaceHub
 from config import HUGGINGFACEHUB_API_TOKEN, CALCULATOR_KEYWORDS, DEFINE_KEYWORDS
 import re
-import google.generativeai as genai
 import os
 
 HUGGINGFACEHUB_API_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
