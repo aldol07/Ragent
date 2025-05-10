@@ -14,8 +14,12 @@ class Agent:
         self.model = HuggingFaceHub(
             repo_id="HuggingFaceH4/zephyr-7b-beta",
             huggingfacehub_api_token=HUGGINGFACEHUB_API_TOKEN,
-            model_kwargs={"temperature": 0.7, "max_length": 512}
-        ).invoke
+            model_kwargs={
+                "temperature": 0.7,
+                "max_length": 512,
+                "return_full_text": False
+            }
+        )
         
         self.conversation_history = []
     
@@ -111,7 +115,7 @@ class Agent:
                 decision = "Definition"
                 # Use Zephyr for definitions
                 prompt = f"Provide a clear and concise definition for: {query}"
-                response = self._clean_response(self.model(prompt))
+                response = self._clean_response(self.model.invoke(prompt))
                 
             else:
                 # RAG pipeline with similarity threshold
@@ -124,11 +128,11 @@ class Agent:
                     # Create prompt without showing it in output
                     system_prompt = "You are a helpful assistant. Answer the question based on the provided context. If the context doesn't contain enough information, say so."
                     prompt = f"{system_prompt}\n\nContext:\n{context}\n\nQuestion: {query}\n\nAnswer:"
-                    response = self._clean_response(self.model(prompt))
+                    response = self._clean_response(self.model.invoke(prompt))
                 else:
                     # Fallback to general LLM answering
                     prompt = f"Answer the following question as a helpful assistant: {query}"
-                    response = self._clean_response(self.model(prompt))
+                    response = self._clean_response(self.model.invoke(prompt))
                     decision = "LLM"
                 
         except Exception as e:
