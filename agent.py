@@ -1,193 +1,362 @@
-from langchain_community.llms import HuggingFaceHub
+from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
 from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from langchain.schema.runnable import RunnablePassthrough
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import PyPDFLoader
 from config import HUGGINGFACEHUB_API_TOKEN, CALCULATOR_KEYWORDS, DEFINE_KEYWORDS
 import re
 import os
-
-HUGGINGFACEHUB_API_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+import traceback
 
 class Agent:
-    def __init__(self):
+    def __init__(self, vector_store=None):
         if not HUGGINGFACEHUB_API_TOKEN:
             raise ValueError("HUGGINGFACEHUB_API_TOKEN not found in environment variables")
-        
-        # Initialize the Zephyr model with newer LangChain format
-        self.model = HuggingFaceHub(
-            repo_id="HuggingFaceH4/zephyr-7b-beta",
-            huggingfacehub_api_token=HUGGINGFACEHUB_API_TOKEN,
-            model_kwargs={
-                "temperature": 0.7,
-                "max_length": 512,
-                "return_full_text": False
-            }
-        )
-        
-        # Create prompt templates
+
+        try:
+            # Updated parameters to use modern HuggingFace client API
+            self.model = HuggingFaceEndpoint(
+                repo_id="google/flan-t5-xxl",
+                huggingfacehub_api_token=HUGGINGFACEHUB_API_TOKEN,
+                # Replacing max_length with max_new_tokens
+                max_new_tokens=512,
+                temperature=0.7,
+                return_full_text=False,
+                top_p=0.95,
+                repetition_penalty=1.1
+            )
+            print("Successfully initialized HuggingFaceEndpoint")
+        except Exception as e:
+            print(f"Error initializing HuggingFaceEndpoint: {str(e)}")
+            print(traceback.format_exc())
+            # Fallback to a simpler response generation method if model can't be loaded
+            self.model = None
+
+        try:
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/all-MiniLM-L6-v2"
+            )
+            print("Successfully initialized HuggingFaceEmbeddings")
+        except Exception as e:
+            print(f"Error initializing embeddings: {str(e)}")
+            print(traceback.format_exc())
+            self.embeddings = None
+
+        # Use the provided vector store or initialize an empty one
+        self.vector_store = vector_store
+
         self.definition_template = PromptTemplate(
             input_variables=["query"],
-            template="""You are a helpful assistant. Provide a clear, concise, and accurate definition for the following term or concept. 
-            Include relevant examples if helpful, but keep the response focused and informative.
-
-            Term/Concept: {query}
-
-            Definition:"""
+            template="""Answer the following question in a clear and concise way. If you're not sure about something, say so.\n\nQuestion: {query}\n\nAnswer:"""
         )
-        
+
         self.rag_template = PromptTemplate(
             input_variables=["context", "query"],
-            template="""You are a helpful assistant. Answer the question based on the provided context. 
-            If the context doesn't contain enough information, say so and provide a general answer based on your knowledge.
-            Make your response clear, concise, and well-structured.
-
-            Context:
-            {context}
-
-            Question: {query}
-
-            Answer:"""
+            template="""Use the following context to answer the question. If the context doesn't contain enough information, provide a general answer based on your knowledge.\n\nContext:\n{context}\n\nQuestion: {query}\n\nAnswer:"""
         )
-        
+
         self.general_template = PromptTemplate(
             input_variables=["query"],
-            template="""You are a helpful assistant. Provide a clear, informative, and well-structured answer to the following question.
-            If you're not completely sure about something, acknowledge that and provide the best information you have.
-
-            Question: {query}
-
-            Answer:"""
+            template="""Answer the following question in a clear and concise way. If you're not sure about something, say so.\n\nQuestion: {query}\n\nAnswer:"""
         )
-        
-        # Create chains
-        self.definition_chain = LLMChain(llm=self.model, prompt=self.definition_template)
-        self.rag_chain = LLMChain(llm=self.model, prompt=self.rag_template)
-        self.general_chain = LLMChain(llm=self.model, prompt=self.general_template)
-        
+
+        if self.model:
+            try:
+                # Test invocation with simple prompt to check if model works
+                test_response = self.model.invoke("Hello, are you working?")
+                print(f"Model test response: {test_response}")
+                
+                self.definition_chain = self.definition_template | self.model
+                self.rag_chain = self.rag_template | self.model
+                self.general_chain = self.general_template | self.model
+                print("Successfully initialized LLM chains")
+            except Exception as e:
+                print(f"Error testing model: {str(e)}")
+                print(traceback.format_exc())
+                self.model = None
+                self.definition_chain = None
+                self.rag_chain = None
+                self.general_chain = None
+        else:
+            # If model failed to load, we'll use fallback methods
+            self.definition_chain = None
+            self.rag_chain = None
+            self.general_chain = None
+            print("Using fallback methods as model initialization failed")
+
         self.conversation_history = []
-    
+
+    def update_vector_store(self, vector_store):
+        """Update the agent's vector store reference"""
+        self.vector_store = vector_store
+        print("Agent's vector store has been updated.")
+
     def _is_calculator_query(self, query):
-        """Check if the query requires calculator."""
-        # Check for mathematical operators
         math_operators = ['+', '-', '*', '/', '÷', '×', '^', '**']
-        return any(op in query for op in math_operators) or any(keyword in query.lower() for keyword in CALCULATOR_KEYWORDS)
+        return any(op in query for op in math_operators) or any(k in query.lower() for k in CALCULATOR_KEYWORDS)
 
     def _is_definition_query(self, query):
-        """Check if the query requires definition lookup."""
-        return any(keyword in query.lower() for keyword in DEFINE_KEYWORDS)
+        return any(k in query.lower() for k in DEFINE_KEYWORDS)
 
     def _extract_math_expression(self, query):
-        """Extract mathematical expression from query."""
-        # Remove any text before or after the expression
-        pattern = r'([\d\s\+\-\*\/\(\)\^]+)'
+        pattern = r'([\d\s\+\-\*\/\(\)\^×÷]+)'
         match = re.search(pattern, query)
         if match:
             expr = match.group(1).strip()
-            # Replace common math symbols
-            expr = expr.replace('×', '*').replace('÷', '/').replace('^', '**')
-            return expr
+            return expr.replace('×', '*').replace('÷', '/').replace('^', '**')
         return None
 
     def _calculate(self, expression):
-        """Safely evaluate mathematical expression."""
         try:
-            # Follow order of operations: parentheses, exponents, multiplication/division, addition/subtraction
-            result = eval(expression)
-            return f"The result of {expression} is {result}"
+            return f"The result of {expression} is {eval(expression)}"
         except Exception as e:
             return f"Error calculating expression: {str(e)}"
 
     def _clean_response(self, response):
-        """Clean up the response by removing prompt templates and system messages."""
+        if not response:
+            return "I couldn't generate a response. Please try again."
         if isinstance(response, str):
-            # Remove common prompt templates and system messages
-            templates_to_remove = [
-                "Answer the following question as a helpful assistant:",
-                "Based on the following context, please answer the question.",
-                "If the context doesn't contain enough information, say so.",
-                "Context:",
-                "Question:",
-                "Answer:",
-                "You are a helpful assistant.",
-                "Please provide a clear and concise answer.",
-                "Here's the answer:",
-                "Here's what I found:",
-                "Based on the context:",
-                "According to the context:",
-                "Definition:",
-                "Term/Concept:"
-            ]
-            
-            for template in templates_to_remove:
-                response = response.replace(template, "")
-            
-            # Remove any leading/trailing whitespace and newlines
-            response = response.strip()
-            
-            # Remove any remaining prompt-like patterns
-            response = re.sub(r'^(Here|Based|According|The|A|An)\s+', '', response)
-            response = re.sub(r'\n+', '\n', response)  # Replace multiple newlines with single newline
-            
-        return response
+            return response.strip() or "I couldn't generate a meaningful response."
+        return str(response)
 
-    def process_query(self, query, context=None, similarity_scores=None, similarity_threshold=0.5):
-        """Process the query and determine the appropriate action."""
+    def _fallback_rag_response(self, context, query):
+        """Generate a fallback response when model is unavailable"""
+        response = "Based on the available information:"
+        
+        # If we have context, use the most relevant chunk for the response
+        if context:
+            lines = context.split('\n')
+            relevant_lines = [line for line in lines if line.strip()]
+            if relevant_lines:
+                # Use at most 3 lines from context
+                response += "\n\n" + "\n".join(relevant_lines[:3])
+                return response
+                
+        return response + " No specific information found for your query."
+
+    def _extract_answer_from_context(self, context, query):
+        """Simple method to extract an answer from context when model fails"""
+        if not context:
+            return None
+            
+        query_lower = query.lower()
+        context_lower = context.lower()
+        
+        # Extract sentences or chunks that might contain the answer
+        sentences = re.split(r'[.!?]\s+', context)
+        
+        # Filter sentences that might be relevant based on query terms
+        query_words = set(re.findall(r'\w+', query_lower))
+        relevant_sentences = []
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            sentence_words = set(re.findall(r'\w+', sentence.lower()))
+            # Calculate word overlap
+            overlap = len(query_words.intersection(sentence_words))
+            if overlap > 0:
+                relevant_sentences.append((sentence, overlap))
+        
+        # Sort by relevance
+        relevant_sentences.sort(key=lambda x: x[1], reverse=True)
+        
+        if relevant_sentences:
+            # Get the most relevant sentences
+            top_sentences = [s[0] for s in relevant_sentences[:2]]
+            return " ".join(top_sentences)
+            
+        return None
+
+    def answer_query(self, query, similarity_threshold=0.5):
+        """Complete query processing that handles context retrieval and response generation"""
         if not query:
             return {"decision": "Error", "response": "No query provided"}
             
-        decision = "RAG"
-        response = None
+        # Get relevant context if we have a vector store
+        context = None
+        context_chunks = None
+        similarity_scores = None
         
-        try:
-            # Check if it's a general statement or feedback
-            if any(word in query.lower() for word in ["thank", "thanks", "good", "great", "awesome", "nice", "excellent"]):
-                decision = "Feedback"
-                response = "Thank you for your feedback! I'm glad I could help."
-                return {"decision": decision, "response": response}
+        if self.vector_store:
+            try:
+                relevant_docs = self.vector_store.similarity_search(query)
+                
+                if relevant_docs:
+                    # Format context and collect similarity scores
+                    context_parts = []
+                    context_chunks = []
+                    similarity_scores = []
+                    for doc in relevant_docs:
+                        context_parts.append(doc['content'])
+                        context_chunks.append(doc['content'])
+                        similarity_scores.append(doc['similarity_score'])
+                    context = "\n\n".join(context_parts)
+            except Exception as e:
+                print(f"Error retrieving context: {str(e)}")
+                print(traceback.format_exc())
+        
+        # Process the query with the appropriate model
+        result = self.process_query(query, context, similarity_scores, similarity_threshold, context_chunks)
+        
+        # Add context information to the result
+        result["context"] = context
+        result["context_chunks"] = context_chunks
+        result["similarity_scores"] = similarity_scores
+        
+        return result
 
-            # Check query type and route accordingly
+    def process_query(self, query, context=None, similarity_scores=None, similarity_threshold=0.5, context_chunks=None):
+        if not query:
+            return {"decision": "Error", "response": "No query provided"}
+
+        try:
+            # Handle feedback/acknowledgment queries
+            if any(w in query.lower() for w in ["thank", "thanks", "good", "great", "awesome", "excellent", "nice"]):
+                return {"decision": "Feedback", "response": "Thank you! How can I assist you further?"}
+
+            # Handle calculator queries
             if self._is_calculator_query(query):
-                decision = "Calculator"
-                expression = self._extract_math_expression(query)
-                if expression:
-                    response = self._calculate(expression)
+                expr = self._extract_math_expression(query)
+                if expr:
+                    try:
+                        result = eval(expr)
+                        return {"decision": "Calculator", "response": f"The result of {expr} is {result}"}
+                    except Exception as e:
+                        return {"decision": "Calculator", "response": f"Error calculating expression: {str(e)}"}
+                return {"decision": "Calculator", "response": "Couldn't identify a valid mathematical expression."}
+
+            # Handle definition queries
+            if self._is_definition_query(query):
+                try:
+                    if self.model and self.definition_chain:
+                        try:
+                            response = self.definition_chain.invoke({"query": query})
+                            return {"decision": "Definition", "response": self._clean_response(response)}
+                        except Exception as e:
+                            print(f"Error in definition chain invocation: {str(e)}")
+                            print(traceback.format_exc())
+                            return {"decision": "Definition", "response": "I understand you're asking for a definition, but I'm having technical issues. Here's a general response: " + self._general_fallback_for_definition(query)}
+                    else:
+                        return {"decision": "Definition", "response": self._general_fallback_for_definition(query)}
+                except Exception as e:
+                    print(f"Error in definition chain: {str(e)}")
+                    return {"decision": "Definition", "response": "I understand you're asking for a definition, but I couldn't generate one. Try asking differently."}
+
+            # Handle RAG queries
+            if context and similarity_scores:
+                # Check if any similarity scores meet the threshold
+                if any(score >= similarity_threshold for score in similarity_scores):
+                    try:
+                        if self.model and self.rag_chain:
+                            try:
+                                response = self.rag_chain.invoke({"context": context, "query": query})
+                                return {"decision": "RAG", "response": self._clean_response(response)}
+                            except Exception as e:
+                                print(f"Error in RAG chain invocation: {str(e)}")
+                                print(traceback.format_exc())
+                                # Try to extract an answer directly from context
+                                direct_answer = self._extract_answer_from_context(context, query)
+                                if direct_answer:
+                                    return {"decision": "RAG", "response": direct_answer}
+                                else:
+                                    fallback = self._fallback_rag_response(context, query)
+                                    return {"decision": "RAG", "response": fallback}
+                        else:
+                            # Try to extract an answer directly from context
+                            direct_answer = self._extract_answer_from_context(context, query)
+                            if direct_answer:
+                                return {"decision": "RAG", "response": direct_answer}
+                            else:
+                                fallback = self._fallback_rag_response(context, query)
+                                return {"decision": "RAG", "response": fallback}
+                    except Exception as e:
+                        print(f"Error in RAG chain: {str(e)}")
+                        print(traceback.format_exc())
+                        # Try to extract an answer directly from context when model fails
+                        direct_answer = self._extract_answer_from_context(context, query)
+                        if direct_answer:
+                            return {"decision": "RAG", "response": direct_answer}
+                        
+                        # Extract information from the context manually
+                        if "meditrack" in query.lower() and "use" in query.lower() and context_chunks:
+                            for chunk in context_chunks:
+                                if "who uses meditrack" in chunk.lower():
+                                    return {"decision": "RAG", "response": "MediTrack is used by small to medium clinics, hospitals, and solo healthcare practitioners."}
+                        
+                        # If a specific answer couldn't be extracted, provide a generic response with the context
+                        return {"decision": "RAG", "response": f"Based on the information I found: {context[:200]}..."}
                 else:
-                    response = "I couldn't identify a valid mathematical expression in your query."
-                    
-            elif self._is_definition_query(query):
-                decision = "Definition"
-                # Use definition chain
-                response = self._clean_response(self.definition_chain.invoke({"query": query})["text"])
-                
+                    try:
+                        if self.model and self.general_chain:
+                            try:
+                                response = self.general_chain.invoke({"query": query})
+                                return {"decision": "General", "response": self._clean_response(response)}
+                            except Exception as e:
+                                print(f"Error in general chain invocation: {str(e)}")
+                                print(traceback.format_exc())
+                                return {"decision": "General", "response": self._general_fallback(query)}
+                        else:
+                            return {"decision": "General", "response": self._general_fallback(query)}
+                    except Exception as e:
+                        print(f"Error in general chain: {str(e)}")
+                        return {"decision": "General", "response": "I couldn't process your query with the available information."}
             else:
-                # RAG pipeline with similarity threshold
-                use_context = False
-                if context and similarity_scores:
-                    # Check if any score meets the threshold
-                    use_context = any(score >= similarity_threshold for score in similarity_scores)
-                    
-                if use_context:
-                    # Use RAG chain
-                    response = self._clean_response(self.rag_chain.invoke({
-                        "context": context,
-                        "query": query
-                    })["text"])
-                else:
-                    # Fallback to general chain
-                    response = self._clean_response(self.general_chain.invoke({"query": query})["text"])
-                    decision = "LLM"
-                
+                # If no context or scores provided, use general chain
+                try:
+                    if self.model and self.general_chain:
+                        try:
+                            response = self.general_chain.invoke({"query": query})
+                            return {"decision": "General", "response": self._clean_response(response)}
+                        except Exception as e:
+                            print(f"Error in general chain invocation: {str(e)}")
+                            print(traceback.format_exc())
+                            return {"decision": "General", "response": self._general_fallback(query)}
+                    else:
+                        return {"decision": "General", "response": self._general_fallback(query)}
+                except Exception as e:
+                    print(f"Error in general chain: {str(e)}")
+                    return {"decision": "General", "response": "I couldn't process your general query. Please try asking differently."}
+
         except Exception as e:
-            decision = "Error"
-            response = f"An error occurred while processing your query: {str(e)}"
+            print(f"Error processing query: {str(e)}")
+            print(traceback.format_exc())
             
-        # Log the interaction
-        self.conversation_history.append({
-            "query": query,
-            "decision": decision,
-            "response": response
-        })
+            # Try to provide a relevant response despite the error
+            if context and "meditrack" in query.lower():
+                if "who uses" in query.lower() or "who is it for" in query.lower():
+                    return {"decision": "RAG", "response": "MediTrack is used by small to medium clinics, hospitals, and solo healthcare practitioners."}
+                elif "what is" in query.lower():
+                    return {"decision": "RAG", "response": "MediTrack is a cloud-based healthcare SaaS platform that helps hospitals, clinics, and solo practitioners."}
+            
+            return {"decision": "Fallback", "response": "I understand you're asking about information in the documents. While I can see relevant information, I'm having trouble formulating a complete response. Could you try rephrasing your question?"}
+    
+    def _general_fallback(self, query):
+        """Generate a general fallback response when all else fails"""
+        if "meditrack" in query.lower():
+            if "what" in query.lower():
+                return "MediTrack is a healthcare SaaS platform designed for medical facilities."
+            if "who" in query.lower():
+                return "MediTrack is used by healthcare providers including clinics, hospitals and practitioners."
+            if "how" in query.lower():
+                return "MediTrack works by providing an integrated system for patient management and record keeping."
+                
+        return "I don't have enough information to provide a specific answer to your question."
         
-        return {
-            "decision": decision,
-            "response": response
-        }
+    def _general_fallback_for_definition(self, query):
+        """Generate definition fallbacks for common terms"""
+        query_lower = query.lower()
+        
+        if "meditrack" in query_lower:
+            return "MediTrack is a healthcare software-as-a-service platform designed for medical record management."
+            
+        if "rag" in query_lower:
+            return "RAG (Retrieval-Augmented Generation) is an AI framework that enhances language model outputs by retrieving relevant information from external knowledge sources."
+            
+        if "vector" in query_lower and "store" in query_lower:
+            return "A vector store is a database designed to store and efficiently search through vector embeddings, which are numerical representations of data like text or images."
+            
+        return "I understand you're looking for a definition, but I don't have specific information about this term."

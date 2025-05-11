@@ -13,4 +13,5 @@ pandas
 tqdm
 typing-extensions
 pydantic
-
+langchain_huggingface
+PyPDF

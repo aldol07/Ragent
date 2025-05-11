@@ -3,6 +3,7 @@ from document_processor import DocumentProcessor
 from vector_store import VectorStore
 from agent import Agent
 import os
+import traceback
 
 # Initialize components
 @st.cache_resource
@@ -10,13 +11,15 @@ def initialize_components():
     try:
         doc_processor = DocumentProcessor()
         vector_store = VectorStore()
-        agent = Agent()
+        # Initialize agent with the vector store
+        agent = Agent(vector_store=vector_store)
         return doc_processor, vector_store, agent
     except ValueError as e:
         st.error(f"Initialization error: {str(e)}")
         st.stop()
     except Exception as e:
         st.error(f"Unexpected error during initialization: {str(e)}")
+        st.error(traceback.format_exc())
         st.stop()
 
 def main():
@@ -29,9 +32,20 @@ def main():
         st.error("Failed to initialize components. Please check your environment variables and try again.")
         st.stop()
 
+    # Check if vector store already has documents
+    vector_stats = vector_store.get_collection_stats()
+    has_documents = vector_stats is not None and vector_stats.get('count', 0) > 0
+    
     # Sidebar for document processing
     with st.sidebar:
         st.header("Document Processing")
+        
+        # Display status of current vector store
+        if has_documents:
+            st.success(f"✅ Documents already loaded: {vector_stats['count']} chunks")
+        else:
+            st.warning("⚠️ No documents loaded yet")
+            
         if st.button("Process Documents"):
             try:
                 with st.spinner("Processing documents..."):
@@ -42,16 +56,32 @@ def main():
                         return
 
                     # Create and save vector store
-                    vector_store.create_vector_store(chunks)
-                    vector_store.save_vector_store()
-
+                    success = vector_store.create_vector_store(chunks)
+                    if not success:
+                        st.error("Failed to create vector store. Please check the logs for details.")
+                        return
+                        
+                    # Update the agent's vector store reference
+                    agent.update_vector_store(vector_store)
+                    
                     # Display collection stats
                     stats = vector_store.get_collection_stats()
                     if stats:
                         st.success(f"Documents processed and indexed successfully!")
                         st.info(f"Collection stats: {stats['count']} chunks, {stats['dimensions']} dimensions")
+                        # Force a rerun to update the sidebar status
+                        st.rerun()
+                    else:
+                        st.warning("Could not retrieve collection statistics.")
             except Exception as e:
                 st.error(f"Error processing documents: {str(e)}")
+                st.error("Please check if your documents are valid PDF files and try again.")
+                st.error(traceback.format_exc())
+
+    # Add debugging mode toggle
+    with st.sidebar:
+        st.divider()
+        debug_mode = st.checkbox("Debug Mode", value=False)
 
     # Main chat interface
     st.header("Ask a Question")
@@ -64,7 +94,7 @@ def main():
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
-            if "context" in message and message["context"]:
+            if "context" in message and message["context"] and debug_mode:
                 with st.expander("View Retrieved Context"):
                     for i, chunk in enumerate(message["context_chunks"]):
                         st.write(f"**Chunk {i+1}**")
@@ -86,47 +116,38 @@ def main():
         with st.chat_message("assistant"):
             try:
                 with st.spinner("Thinking..."):
-                    # Get relevant context
-                    relevant_docs = vector_store.similarity_search(prompt)
-                    
-                    # Format context and collect similarity scores
-                    context_parts = []
-                    context_chunks = []
-                    similarity_scores = []
-                    for doc in relevant_docs:
-                        context_parts.append(doc['content'])
-                        context_chunks.append(doc['content'])
-                        similarity_scores.append(doc['similarity_score'])
-                    context = "\n\n".join(context_parts)
-                    
-                    # Set similarity threshold
-                    similarity_threshold = 0.5
-                    # Process query with agent, passing similarity scores
-                    result = agent.process_query(prompt, context, similarity_scores, similarity_threshold)
+                    # Get relevant context using the agent's internal query process
+                    response = agent.answer_query(prompt)
                     
                     # Display response
-                    st.write(result["response"])
+                    st.write(response["response"])
                     
-                    # Display decision and context
-                    st.info(f"Decision: {result['decision']}")
+                    # Display decision and context in debug mode
+                    if debug_mode:
+                        st.info(f"Decision: {response['decision']}")
                     
-                    if context:
+                    # Only show context if debugging is on and there's context
+                    if debug_mode and response.get('context_chunks'):
                         with st.expander("View Retrieved Context"):
-                            for i, chunk in enumerate(context_chunks):
-                                st.write(f"**Chunk {i+1}** (Relevance: {similarity_scores[i]:.2%})")
+                            for i, chunk in enumerate(response.get('context_chunks', [])):
+                                score_str = f"(Relevance: {response.get('similarity_scores', [])[i]:.2%})" if i < len(response.get('similarity_scores', [])) else ""
+                                st.write(f"**Chunk {i+1}** {score_str}")
                                 st.write(chunk)
                                 st.write("---")
                     
                     # Add assistant response to chat history
                     st.session_state.messages.append({
                         "role": "assistant",
-                        "content": result["response"],
-                        "context": context if context else None,
-                        "context_chunks": context_chunks if context_chunks else None,
-                        "similarity_scores": [f"{score:.2%}" for score in similarity_scores] if similarity_scores else None
+                        "content": response["response"],
+                        "context": response.get("context"),
+                        "context_chunks": response.get("context_chunks"),
+                        "similarity_scores": response.get("similarity_scores", [])
                     })
             except Exception as e:
                 st.error(f"Error processing your query: {str(e)}")
+                if debug_mode:
+                    st.error(traceback.format_exc())
+                st.error("Please try again or rephrase your question.")
 
 if __name__ == "__main__":
     main()

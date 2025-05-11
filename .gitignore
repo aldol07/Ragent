@@ -41,6 +41,8 @@ venv.bak/
 # Project specific
 chroma_db/
 
+faiss_index/
+
 
 *.log
 .streamlit/secrets.toml
