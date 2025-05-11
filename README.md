@@ -2,169 +2,167 @@
 
 A sophisticated Question-Answering system that combines Retrieval-Augmented Generation (RAG) with multiple specialized agents for handling different types of queries. The system uses advanced language models and vector embeddings to provide accurate, context-aware responses.
 
-## Architecture
+🔗 **Live Demo**: [ragent-07.streamlit.app](https://ragent-07.streamlit.app/)  
+📂 **GitHub Repo**: [github.com/aldol07/Ragent](https://github.com/aldol07/Ragent)
 
-### Core Components
+---
+
+## 🧠 Architecture
+
+### 🔧 Core Components
 
 1. **Document Processor**
-   - Handles PDF document ingestion and processing
-   - Splits documents into meaningful chunks
-   - Prepares text for vector storage
+   - Ingests and preprocesses PDF documents
+   - Splits content into contextually meaningful chunks
+   - Prepares text for vector embedding
 
-2. **Vector Store**
-   - Uses ChromaDB for efficient vector storage and retrieval
-   - Implements similarity search with normalized scoring
-   - Handles duplicate detection and unique content filtering
-   - Persists embeddings for faster subsequent queries
+2. **Vector Store (FAISS)**
+   - Utilizes FAISS for fast, scalable vector similarity search
+   - Embeddings powered by `sentence-transformers/all-MiniLM-L6-v2`
+   - Handles duplicate filtering and persistent storage
+   - Optimized for both local and cloud deployment
 
 3. **Agent System**
-   - Multi-agent architecture for specialized query handling
-   - Main components:
-     - RAG Agent: Handles general queries using retrieved context
-     - Calculator Agent: Processes mathematical expressions
-     - Definition Agent: Provides clear definitions
-     - Feedback Handler: Manages user feedback and acknowledgments
+   - Modular multi-agent architecture with specialized query handlers:
+     - **RAG Agent**: Answers context-aware general queries
+     - **Calculator Agent**: Solves mathematical expressions
+     - **Definition Agent**: Responds to "define ..." queries
+     - **Feedback Handler**: Handles acknowledgments and feedback
 
 4. **Web Interface**
-   - Streamlit-based interactive UI
-   - Real-time document processing
-   - Chat interface with context visualization
-   - Similarity score display
+   - Built with Streamlit for fast, interactive UI
+   - Sidebar controls for document upload and indexing
+   - Chat interface with live context visualization
+   - Displays similarity scores alongside answers
 
-### Key Design Choices
+---
 
-1. **Model Selection**
-   - Uses Zephyr-7B-beta for high-quality responses
-   - Implements HuggingFace embeddings for semantic search
-   - Balances performance and resource requirements
+### 🎯 Key Design Choices
 
-2. **RAG Implementation**
-   - Context-aware responses using retrieved information
-   - Similarity threshold-based context selection
-   - Normalized similarity scoring for better relevance ranking
-   - Duplicate content filtering for diverse responses
+- **Language Model**: Uses **Zephyr-7B-beta** via HuggingFace for high-quality answers
+- **Embeddings**: Implements `sentence-transformers/all-MiniLM-L6-v2` for semantic retrieval
+- **RAG Logic**:
+  - Retrieves context based on similarity threshold
+  - Normalized scoring for better relevance
+  - Removes redundant chunks before answering
+- **Optimizations**:
+  - Persistent FAISS index for quick restarts
+  - Caching of embeddings and agent responses
+  - Batch chunking and filtering pipeline
 
-3. **Response Processing**
-   - Template-free response generation
-   - Clean formatting and presentation
-   - Context-aware answer generation
-   - Fallback mechanisms for insufficient context
+---
 
-4. **Performance Optimizations**
-   - Caching for frequently accessed components
-   - Efficient vector storage and retrieval
-   - Batch processing for document ingestion
-   - Normalized similarity scores for better ranking
+## ⚙️ Setup Instructions
 
-## Setup Instructions
+### ✅ Prerequisites
 
-### Prerequisites
-
-- Python 3.8 or higher
+- Python 3.8+
 - HuggingFace API token
-- Required Python packages (see requirements.txt)
+- `faiss-cpu` or `faiss-gpu` (depending on system)
+- Dependencies in `requirements.txt`
 
-### Installation
+### 🚀 Installation
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd <repository-name>
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/aldol07/Ragent.git
+cd Ragent
 
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+# Install dependencies
+pip install -r requirements.txt
 
-4. Set up environment variables:
-   ```bash
-   # Create a .env file with:
-   HUGGINGFACEHUB_API_TOKEN=your_token_here
-   ```
+▶️ Running the Application
+Place your PDF files into the docs/ directory
 
-### Running the Application
+Start the Streamlit app:
 
-1. Place your PDF documents in the `docs` folder
+bash
+Copy
+Edit
+streamlit run app.py
+Visit http://localhost:8501 in your browser
 
-2. Start the Streamlit application:
-   ```bash
-   streamlit run app.py
-   ```
+Click "Process Documents" in the sidebar
 
-3. Access the web interface at `http://localhost:8501`
+Start asking questions in the chat interface
 
-4. Click "Process Documents" in the sidebar to index your documents
+☁️ Deploying on Streamlit Cloud
+Fork this repository to your GitHub account
 
-5. Start asking questions in the chat interface
+Go to Streamlit Cloud
 
-### Deployment on Streamlit Cloud
+Create a new app and link to your forked repo
 
-1. Fork this repository to your GitHub account
+Add your HuggingFace token in Secrets:
 
-2. Go to [share.streamlit.io](https://share.streamlit.io)
+ini
+Copy
+Edit
+HUGGINGFACEHUB_API_TOKEN=your_token_here
+Ensure faiss-cpu is listed in requirements.txt
 
-3. Create a new app and connect it to your forked repository
+Deploy the app 🚀
 
-4. Set the following secrets in Streamlit Cloud:
-   - `HUGGINGFACEHUB_API_TOKEN`: Your HuggingFace API token
+💬 Usage Guide
+Document Processing
+Add one or more .pdf files to the docs/ folder
 
-5. Deploy the app
+Click "Process Documents" in the sidebar to start indexing
 
-Note: The application uses ChromaDB with HNSW indexing for efficient vector storage and retrieval. This implementation is optimized for deployment on Streamlit Cloud and doesn't require additional system dependencies.
+Interacting with the Assistant
+Ask general or domain-specific questions
 
-## Usage
+View retrieved context, similarity scores, and full answers
 
-1. **Document Processing**
-   - Add PDF files to the `docs` folder
-   - Click "Process Documents" to index them
-   - View processing statistics in the sidebar
+Try:
 
-2. **Asking Questions**
-   - Type your question in the chat input
-   - View the response and retrieved context
-   - Check similarity scores for context relevance
+"define reinforcement learning"
 
-3. **Special Features**
-   - Mathematical calculations (e.g., "calculate 2 + 2")
-   - Definition requests (e.g., "define quantum computing")
-   - General knowledge questions
-   - Context-aware responses
+"calculate (25 + 33) * 2"
 
-## Project Structure
+"explain the plot of Macbeth"
 
-```
+Features
+Multi-agent architecture
+
+Context-aware RAG answers
+
+Math solving and definition lookups
+
+User feedback management
+
+📁 Project Structure
+graphql
+Copy
+Edit
 .
 ├── app.py                 # Streamlit web application
-├── agent.py              # Multi-agent system implementation
-├── vector_store.py       # Vector storage and retrieval
-├── document_processor.py # Document processing and chunking
-├── config.py            # Configuration and constants
-├── requirements.txt     # Project dependencies
-├── docs/               # Document storage
-└── chroma_db/         # Vector store persistence
-```
+├── agent.py               # Multi-agent system logic
+├── vector_store.py        # FAISS-based vector store
+├── document_processor.py  # PDF chunking and preprocessing
+├── config.py              # Configurations and constants
+├── requirements.txt       # Python dependencies
+├── docs/                  # Input PDF documents
+└── faiss_index/           # Persistent FAISS index (auto-created)
+🤝 Contributing
+Fork the repository
 
-## Contributing
+Create a new feature branch
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+Commit and push your changes
 
-## License
+Open a Pull Request for review
 
-[Your chosen license]
 
-## Acknowledgments
+🙏 Acknowledgments
+HuggingFace — for language models & embeddings
 
-- HuggingFace for the language models and embeddings
-- ChromaDB for vector storage
-- Streamlit for the web interface 
+FAISS — for fast vector search
+
+Streamlit — for an elegant and reactive UI
+
+Langchain — for utility chains and agent tooling
