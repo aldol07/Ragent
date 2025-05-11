@@ -39,7 +39,6 @@ A sophisticated Question-Answering system that combines Retrieval-Augmented Gene
 
 ### 🎯 Key Design Choices
 
-- **Language Model**: Uses **Zephyr-7B-beta** via HuggingFace for high-quality answers
 - **Embeddings**: Implements `sentence-transformers/all-MiniLM-L6-v2` for semantic retrieval
 - **RAG Logic**:
   - Retrieves context based on similarity threshold
@@ -80,9 +79,6 @@ Place your PDF files into the docs/ directory
 
 Start the Streamlit app:
 
-bash
-Copy
-Edit
 streamlit run app.py
 Visit http://localhost:8501 in your browser
 
@@ -98,10 +94,6 @@ Go to Streamlit Cloud
 Create a new app and link to your forked repo
 
 Add your HuggingFace token in Secrets:
-
-ini
-Copy
-Edit
 HUGGINGFACEHUB_API_TOKEN=your_token_here
 Ensure faiss-cpu is listed in requirements.txt
 
