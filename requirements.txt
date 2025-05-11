@@ -15,3 +15,5 @@ typing-extensions
 pydantic
 langchain_huggingface
 PyPDF
+faiss-cpu
+
