@@ -1,4 +1,4 @@
-# Python
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -20,7 +20,6 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
 venv/
 env/
 ENV/
@@ -29,16 +28,8 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDE
-.idea/
 .vscode/
-*.swp
-*.swo
-.DS_Store
-*.sublime-workspace
-*.sublime-project
 
-# Project specific
 chroma_db/
 
 faiss_index/
@@ -47,11 +38,7 @@ faiss_index/
 *.log
 .streamlit/secrets.toml
 
-# Jupyter Notebook
-.ipynb_checkpoints
-*.ipynb
 
-# Distribution / packaging
 .Python
 env/
 build/
@@ -69,8 +56,6 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Unit test / coverage reports
 htmlcov/
 .tox/
 .coverage
@@ -81,23 +66,16 @@ coverage.xml
 *.cover
 .hypothesis/
 
-# Logs
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Local development settings
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
-
-# Environment variables
 .env
 .env.local
 .env.*.local
-
-# System Files
 .DS_Store
 Thumbs.db 
