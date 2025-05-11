@@ -12,7 +12,7 @@ class VectorStore:
         self.embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2"
         )
-        self.dimension = 384  # Dimension for all-MiniLM-L6-v2
+        self.dimension = 384  
         self.persist_directory = "vector_store"
         self.vector_store = None
         self.load_vector_store()
@@ -23,13 +23,11 @@ class VectorStore:
             return False
             
         try:
-            # Create a new vector store directly from documents
             self.vector_store = FAISS.from_documents(
                 documents,
                 self.embeddings
             )
             
-            # Save the vector store immediately after creation
             self.save_vector_store()
             return True
         except Exception as e:
@@ -66,37 +64,28 @@ class VectorStore:
             return []
             
         try:
-            # Get more results initially to ensure we have enough unique chunks
             results = self.vector_store.similarity_search_with_score(
                 query,
-                k=6  # Get more results to ensure we have enough unique chunks
             )
             
-            # Format results to include normalized similarity scores
             formatted_results = []
             seen_contents = set()
             
             if results:
-                # Get the highest score for normalization
                 max_score = max(score for _, score in results)
                 min_score = min(score for _, score in results)
                 
-                # Normalize scores to be between 0 and 1
                 for doc, score in results:
-                    # Skip if we've already seen this content
                     if doc.page_content in seen_contents:
                         continue
                         
-                    # Add to seen contents
                     seen_contents.add(doc.page_content)
                     
-                    # Normalize score to be between 0 and 1
                     if max_score != min_score:
                         normalized_score = (score - min_score) / (max_score - min_score)
                     else:
-                        normalized_score = 1.0  # If all scores are the same
+                        normalized_score = 1.0  
                     
-                    # Add slight variation to identical scores to ensure uniqueness
                     if len(formatted_results) > 0 and normalized_score == formatted_results[-1]['similarity_score']:
                         normalized_score = max(0.0, normalized_score - 0.01)
                         
@@ -106,17 +95,15 @@ class VectorStore:
                         'similarity_score': normalized_score
                     })
                     
-                    # Stop if we have 3 unique results
                     if len(formatted_results) >= 3:
                         break
                 
-                # If we don't have 3 unique results, pad with the last result
                 while len(formatted_results) < 3 and len(results) > 0:
                     last_doc, last_score = results[-1]
                     formatted_results.append({
                         'content': last_doc.page_content,
                         'metadata': last_doc.metadata,
-                        'similarity_score': 0.0  # Set a low score for padded results
+                        'similarity_score': 0.0  
                     })
                 
             return formatted_results
