@@ -15,11 +15,9 @@ class Agent:
             raise ValueError("HUGGINGFACEHUB_API_TOKEN not found in environment variables")
 
         try:
-            # Updated parameters to use modern HuggingFace client API
             self.model = HuggingFaceEndpoint(
                 repo_id="google/flan-t5-xxl",
                 huggingfacehub_api_token=HUGGINGFACEHUB_API_TOKEN,
-                # Replacing max_length with max_new_tokens
                 max_new_tokens=512,
                 temperature=0.7,
                 return_full_text=False,
@@ -30,7 +28,6 @@ class Agent:
         except Exception as e:
             print(f"Error initializing HuggingFaceEndpoint: {str(e)}")
             print(traceback.format_exc())
-            # Fallback to a simpler response generation method if model can't be loaded
             self.model = None
 
         try:
@@ -43,7 +40,6 @@ class Agent:
             print(traceback.format_exc())
             self.embeddings = None
 
-        # Use the provided vector store or initialize an empty one
         self.vector_store = vector_store
 
         self.definition_template = PromptTemplate(
@@ -63,7 +59,6 @@ class Agent:
 
         if self.model:
             try:
-                # Test invocation with simple prompt to check if model works
                 test_response = self.model.invoke("Hello, are you working?")
                 print(f"Model test response: {test_response}")
                 
@@ -79,7 +74,6 @@ class Agent:
                 self.rag_chain = None
                 self.general_chain = None
         else:
-            # If model failed to load, we'll use fallback methods
             self.definition_chain = None
             self.rag_chain = None
             self.general_chain = None
@@ -124,12 +118,10 @@ class Agent:
         """Generate a fallback response when model is unavailable"""
         response = "Based on the available information:"
         
-        # If we have context, use the most relevant chunk for the response
         if context:
             lines = context.split('\n')
             relevant_lines = [line for line in lines if line.strip()]
             if relevant_lines:
-                # Use at most 3 lines from context
                 response += "\n\n" + "\n".join(relevant_lines[:3])
                 return response
                 
@@ -143,10 +135,8 @@ class Agent:
         query_lower = query.lower()
         context_lower = context.lower()
         
-        # Extract sentences or chunks that might contain the answer
         sentences = re.split(r'[.!?]\s+', context)
         
-        # Filter sentences that might be relevant based on query terms
         query_words = set(re.findall(r'\w+', query_lower))
         relevant_sentences = []
         
@@ -156,16 +146,15 @@ class Agent:
                 continue
                 
             sentence_words = set(re.findall(r'\w+', sentence.lower()))
-            # Calculate word overlap
+            
             overlap = len(query_words.intersection(sentence_words))
             if overlap > 0:
                 relevant_sentences.append((sentence, overlap))
         
-        # Sort by relevance
+       
         relevant_sentences.sort(key=lambda x: x[1], reverse=True)
         
         if relevant_sentences:
-            # Get the most relevant sentences
             top_sentences = [s[0] for s in relevant_sentences[:2]]
             return " ".join(top_sentences)
             
@@ -176,7 +165,6 @@ class Agent:
         if not query:
             return {"decision": "Error", "response": "No query provided"}
             
-        # Get relevant context if we have a vector store
         context = None
         context_chunks = None
         similarity_scores = None
@@ -186,7 +174,6 @@ class Agent:
                 relevant_docs = self.vector_store.similarity_search(query)
                 
                 if relevant_docs:
-                    # Format context and collect similarity scores
                     context_parts = []
                     context_chunks = []
                     similarity_scores = []
@@ -199,10 +186,8 @@ class Agent:
                 print(f"Error retrieving context: {str(e)}")
                 print(traceback.format_exc())
         
-        # Process the query with the appropriate model
         result = self.process_query(query, context, similarity_scores, similarity_threshold, context_chunks)
         
-        # Add context information to the result
         result["context"] = context
         result["context_chunks"] = context_chunks
         result["similarity_scores"] = similarity_scores
@@ -214,11 +199,9 @@ class Agent:
             return {"decision": "Error", "response": "No query provided"}
 
         try:
-            # Handle feedback/acknowledgment queries
             if any(w in query.lower() for w in ["thank", "thanks", "good", "great", "awesome", "excellent", "nice"]):
                 return {"decision": "Feedback", "response": "Thank you! How can I assist you further?"}
 
-            # Handle calculator queries
             if self._is_calculator_query(query):
                 expr = self._extract_math_expression(query)
                 if expr:
@@ -229,7 +212,6 @@ class Agent:
                         return {"decision": "Calculator", "response": f"Error calculating expression: {str(e)}"}
                 return {"decision": "Calculator", "response": "Couldn't identify a valid mathematical expression."}
 
-            # Handle definition queries
             if self._is_definition_query(query):
                 try:
                     if self.model and self.definition_chain:
@@ -246,9 +228,7 @@ class Agent:
                     print(f"Error in definition chain: {str(e)}")
                     return {"decision": "Definition", "response": "I understand you're asking for a definition, but I couldn't generate one. Try asking differently."}
 
-            # Handle RAG queries
             if context and similarity_scores:
-                # Check if any similarity scores meet the threshold
                 if any(score >= similarity_threshold for score in similarity_scores):
                     try:
                         if self.model and self.rag_chain:
@@ -258,7 +238,6 @@ class Agent:
                             except Exception as e:
                                 print(f"Error in RAG chain invocation: {str(e)}")
                                 print(traceback.format_exc())
-                                # Try to extract an answer directly from context
                                 direct_answer = self._extract_answer_from_context(context, query)
                                 if direct_answer:
                                     return {"decision": "RAG", "response": direct_answer}
@@ -266,7 +245,6 @@ class Agent:
                                     fallback = self._fallback_rag_response(context, query)
                                     return {"decision": "RAG", "response": fallback}
                         else:
-                            # Try to extract an answer directly from context
                             direct_answer = self._extract_answer_from_context(context, query)
                             if direct_answer:
                                 return {"decision": "RAG", "response": direct_answer}
@@ -276,18 +254,15 @@ class Agent:
                     except Exception as e:
                         print(f"Error in RAG chain: {str(e)}")
                         print(traceback.format_exc())
-                        # Try to extract an answer directly from context when model fails
                         direct_answer = self._extract_answer_from_context(context, query)
                         if direct_answer:
                             return {"decision": "RAG", "response": direct_answer}
                         
-                        # Extract information from the context manually
                         if "meditrack" in query.lower() and "use" in query.lower() and context_chunks:
                             for chunk in context_chunks:
                                 if "who uses meditrack" in chunk.lower():
                                     return {"decision": "RAG", "response": "MediTrack is used by small to medium clinics, hospitals, and solo healthcare practitioners."}
                         
-                        # If a specific answer couldn't be extracted, provide a generic response with the context
                         return {"decision": "RAG", "response": f"Based on the information I found: {context[:200]}..."}
                 else:
                     try:
@@ -305,7 +280,6 @@ class Agent:
                         print(f"Error in general chain: {str(e)}")
                         return {"decision": "General", "response": "I couldn't process your query with the available information."}
             else:
-                # If no context or scores provided, use general chain
                 try:
                     if self.model and self.general_chain:
                         try:
@@ -325,7 +299,6 @@ class Agent:
             print(f"Error processing query: {str(e)}")
             print(traceback.format_exc())
             
-            # Try to provide a relevant response despite the error
             if context and "meditrack" in query.lower():
                 if "who uses" in query.lower() or "who is it for" in query.lower():
                     return {"decision": "RAG", "response": "MediTrack is used by small to medium clinics, hospitals, and solo healthcare practitioners."}
