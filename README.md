@@ -128,9 +128,6 @@ Math solving and definition lookups
 User feedback management
 
 📁 Project Structure
-graphql
-Copy
-Edit
 .
 ├── app.py                 # Streamlit web application
 ├── agent.py               # Multi-agent system logic
