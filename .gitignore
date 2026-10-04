@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.cache/
+.pytest_cache/
+htmlcov/
+.coverage*
+
+# Environments and secrets
+venv/
+.venv/
+env/
+.env
+.env.local
+.env.*.local
+.streamlit/secrets.toml
+
+# Local data, tests and evaluation (kept out of git on purpose)
+docs/
+tests/
+test_*.py
+*_test.py
+eval/
+evals/
+*.jsonl
+results*.md
+scratch/
+notes/
+vector_store/
+*.log
+
+# Keys and credentials
+*.pem
+*.key
+secrets.*
+credentials*.json
+
+# Local tooling
+.claude/
+CLAUDE.md
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
